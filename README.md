@@ -115,3 +115,15 @@ neuromorphic-ssa-benchmark/
     ├── hybrid_ebssa_*.png          # Real-sky trajectory comparison plots
     └── mot_ISS_2_td.png            # Multi-object tracking diagnostic plot
 ~~~
+
+## Laser Orbital Debris Removal (LODR) Error Budget
+Using a self-consistent `31.0 µrad/px` (`6.4"/px`) sensor scale, circular LEO zenith rates (`450–1000 km`), and Phipps et al. (2012) laser-coupling physics (`λ = 1.06 µm`, `1 m` aperture + `1"` seeing → `w_θ = 5.02 µrad`, `Φ_opt = 53 kJ/m²`, `C_m = 75 µN·s/J`), `analysis/lodr_error_budget.py` compares uncompensated pointing offsets (latency lower bounds, excluding host I/O):
+
+| Regime | Rate (mrad/s) | SNN-val (5.5 ms) | SNN-test (5.5 ms) | 200 fps (5.0 ms) | 60 fps (16.7 ms) | 30 fps (33.3 ms) |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **ISS (533 km slant)** | 13.86 | 103.6 µrad | 145.2 µrad | 75.8 µrad | 233.0 µrad | 461.4 µrad |
+| **LEO 450 km** | 16.99 | 117.0 µrad | 155.0 µrad | 90.4 µrad | 285.4 µrad | 566.5 µrad |
+| **LEO 800 km** | 9.32 | 87.1 µrad | 133.9 µrad | 56.0 µrad | 158.7 µrad | 311.9 µrad |
+| **LEO 1000 km** | 7.35 | 81.2 µrad | 130.1 µrad | 48.1 µrad | 126.7 µrad | 246.8 µrad |
+
+![LODR Pointing & Coupling Design Curve](results/lodr_design_curve.png)
