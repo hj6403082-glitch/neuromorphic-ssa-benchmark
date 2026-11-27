@@ -9,7 +9,7 @@ import numpy as np
 
 repo_dir = os.path.abspath(".")
 out_dir = os.path.join(repo_dir, "data", "synth_iss_test")
-v2e_dir = os.path.expanduser("~/tools/v2e")
+v2e_dir = os.environ.get("V2E_DIR", os.path.expanduser("~/tools/v2e"))
 os.makedirs(out_dir, exist_ok=True)
 
 W, H = 346, 260

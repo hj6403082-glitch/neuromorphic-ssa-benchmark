@@ -10,7 +10,7 @@ from PIL import Image
 
 
 WIDTH, HEIGHT = 346, 260
-V2E_SCRIPT = os.path.expanduser("~/tools/v2e/v2e.py")
+V2E_SCRIPT = os.path.join(os.environ.get("V2E_DIR", os.path.expanduser("~/tools/v2e")), "v2e.py")
 
 
 def render_starfield_frame(
