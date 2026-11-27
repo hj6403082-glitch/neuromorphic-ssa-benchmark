@@ -40,21 +40,13 @@ class SpikingConvLIFTracker(nn.Module):
 
         self.head = nn.Conv2d(hidden_channels, 1, kernel_size=1)
 
-        # Precompute coordinate grids in original pixel space
         xs = torch.linspace(0.0, orig_w - 1.0, grid_w)
         ys = torch.linspace(0.0, orig_h - 1.0, grid_h)
         grid_y, grid_x = torch.meshgrid(ys, xs, indexing="ij")
-        self.register_buffer("grid_x", grid_x.reshape(1, -1))  # (1, H*W)
-        self.register_buffer("grid_y", grid_y.reshape(1, -1))  # (1, H*W)
+        self.register_buffer("grid_x", grid_x.reshape(1, -1))
+        self.register_buffer("grid_y", grid_y.reshape(1, -1))
 
-    def forward(self, x_seq: torch.Tensor):
-        """
-        Args:
-            x_seq: (B, T, 2, grid_h, grid_w) binned ON/OFF event frames.
-        Returns:
-            coords: (B, T, 2) predicted (x, y) in original pixel coordinates.
-            spike_rate: scalar mean spike rate across all LIF layers (sparsity metric).
-        """
+    def forward(self, x_seq: torch.Tensor, return_spread: bool = False):
         B, T, _, H, W = x_seq.shape
         device = x_seq.device
 
@@ -63,6 +55,7 @@ class SpikingConvLIFTracker(nn.Module):
         mem3 = torch.zeros(B, self.conv3.out_channels, H, W, device=device)
 
         coords_list = []
+        spread_list = []
         total_spikes = 0.0
         total_neurons = 0
 
@@ -76,7 +69,6 @@ class SpikingConvLIFTracker(nn.Module):
             cur3 = self.bn3(self.conv3(spk2))
             spk3, mem3 = self.lif3(cur3, mem3)
 
-            # Use membrane potential of final LIF + spikes for smooth spatial readout
             logits = self.head(spk3 + 0.25 * mem3).reshape(B, -1)
             probs = F.softmax(logits, dim=-1)
 
@@ -84,9 +76,17 @@ class SpikingConvLIFTracker(nn.Module):
             pred_y = (probs * self.grid_y).sum(dim=-1)
             coords_list.append(torch.stack([pred_x, pred_y], dim=-1))
 
+            if return_spread:
+                dx2 = (self.grid_x - pred_x.unsqueeze(-1)) ** 2
+                dy2 = (self.grid_y - pred_y.unsqueeze(-1)) ** 2
+                spread = torch.sqrt((probs * (dx2 + dy2)).sum(dim=-1) + 1e-6)
+                spread_list.append(spread)
+
             total_spikes = total_spikes + spk1.sum() + spk2.sum() + spk3.sum()
             total_neurons += spk1.numel() + spk2.numel() + spk3.numel()
 
-        coords = torch.stack(coords_list, dim=1)  # (B, T, 2)
+        coords = torch.stack(coords_list, dim=1)
         spike_rate = total_spikes / max(1, total_neurons)
+        if return_spread:
+            return coords, spike_rate, torch.stack(spread_list, dim=1)
         return coords, spike_rate
