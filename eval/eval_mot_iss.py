@@ -164,6 +164,8 @@ def run_mot_snn_kf(
     gate_px: float = 35.0,
     max_missed: int = 6,
     min_hits_to_report: int = 5,
+    mode: str = "softmax",
+    prob_thresh: float = 0.25,
 ):
     n_bins = int(round(data["duration_s"] / DT_STEP))
     frames = np.zeros((n_bins, 2, GRID_H, GRID_W), dtype=np.float32)
@@ -198,9 +200,15 @@ def run_mot_snn_kf(
         spk3, mem3 = model.lif3(cur3, mem3)
 
         logits = model.head(spk3 + 0.25 * mem3).reshape(B, -1)
-        probs_2d = F.softmax(logits, dim=-1).reshape(H, W).cpu().numpy()
-
-        dets = extract_heatmap_peaks(probs_2d, data["x_max"], data["y_max"])
+        if mode == "sigmoid":
+            probs_2d = torch.sigmoid(logits).reshape(H, W).cpu().numpy()
+            dets = extract_heatmap_peaks(
+                probs_2d, data["x_max"], data["y_max"],
+                rel_thresh=0.0, min_prob=prob_thresh, nms_radius=4, max_peaks=8
+            )
+        else:
+            probs_2d = F.softmax(logits, dim=-1).reshape(H, W).cpu().numpy()
+            dets = extract_heatmap_peaks(probs_2d, data["x_max"], data["y_max"])
 
         for tr in tracks:
             tr["kf"].predict(t_sec)
@@ -317,6 +325,8 @@ def main():
     parser.add_argument("--ckpt", default="checkpoints/snn_tracker_v2_best.pt")
     parser.add_argument("--beta", type=float, default=0.85)
     parser.add_argument("--gate_px", type=float, default=35.0)
+    parser.add_argument("--mode", choices=["softmax", "sigmoid"], default="softmax")
+    parser.add_argument("--prob_thresh", type=float, default=0.25)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -335,7 +345,7 @@ def main():
     data = load_iss_multi_object(
         args.h5, args.recording, duration_s=args.duration_s, start_offset_s=args.start_offset_s
     )
-    pred_tracks = run_mot_snn_kf(model, data, device, gate_px=args.gate_px)
+    pred_tracks = run_mot_snn_kf(model, data, device, gate_px=args.gate_px, mode=args.mode, prob_thresh=args.prob_thresh)
     per_obj, summary = evaluate_against_gt(pred_tracks, data["gt_tracks"])
 
     print(
