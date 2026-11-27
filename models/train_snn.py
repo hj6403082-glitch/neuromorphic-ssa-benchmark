@@ -8,6 +8,7 @@ import h5py
 import numpy as np
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 sys.path.insert(0, os.path.dirname(__file__))
 from snn_tracker import SpikingConvLIFTracker
@@ -71,25 +72,45 @@ def augment_pass(x: torch.Tensor, y: torch.Tensor):
     return x, y
 
 
+def gaussian_heatmap_loss(
+    logits: torch.Tensor,
+    targets: torch.Tensor,
+    grid_x: torch.Tensor,
+    grid_y: torch.Tensor,
+    sigma_px: float = 6.0,
+):
+    """Cross-entropy between predicted spatial distribution and a sharp 2D Gaussian target."""
+    dx2 = (grid_x.unsqueeze(1) - targets[..., 0:1]) ** 2
+    dy2 = (grid_y.unsqueeze(1) - targets[..., 1:2]) ** 2
+    target_dist = torch.exp(-(dx2 + dy2) / (2.0 * sigma_px**2))
+    target_dist = target_dist / (target_dist.sum(dim=-1, keepdim=True) + 1e-8)
+    log_probs = F.log_softmax(logits, dim=-1)
+    return -(target_dist * log_probs).sum(dim=-1).mean()
+
+
 def evaluate_split(model, recs, device):
     model.eval()
-    rmses = []
+    rmses, spreads = [], []
     with torch.no_grad():
         for rec in recs:
             x = rec["frames"].unsqueeze(0).to(device)
             y = rec["targets"].unsqueeze(0).to(device)
-            pred, _ = model(x)
+            pred, _, spread = model(x, return_spread=True)
             err = torch.hypot(pred[..., 0] - y[..., 0], pred[..., 1] - y[..., 1])
             rmses.append(torch.sqrt((err**2).mean()).item())
-    return float(np.mean(rmses))
+            spreads.append(spread.mean().item())
+    return float(np.mean(rmses)), float(np.mean(spreads))
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train SpikingConvLIFTracker.")
+    parser = argparse.ArgumentParser(description="Train SpikingConvLIFTracker v3.")
     parser.add_argument("--manifest", default="data/benchmark_v2/manifest.csv")
     parser.add_argument("--epochs", type=int, default=80)
     parser.add_argument("--lr", type=float, default=3e-3)
-    parser.add_argument("--out_ckpt", default="checkpoints/snn_tracker_v2_best.pt")
+    parser.add_argument("--beta", type=float, default=0.95)
+    parser.add_argument("--hm_weight", type=float, default=2.0)
+    parser.add_argument("--sigma_px", type=float, default=6.0)
+    parser.add_argument("--out_ckpt", default="checkpoints/snn_tracker_v3_best.pt")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -108,7 +129,7 @@ def main():
     model = SpikingConvLIFTracker(
         in_channels=2,
         hidden_channels=32,
-        beta=0.85,
+        beta=args.beta,
         orig_w=ORIG_W,
         orig_h=ORIG_H,
         grid_w=GRID_W,
@@ -117,11 +138,11 @@ def main():
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-4)
-    criterion = nn.SmoothL1Loss(beta=5.0)
+    coord_criterion = nn.SmoothL1Loss(beta=5.0)
 
     best_val_rmse = float("inf")
     print(
-        f"Training SpikingConvLIFTracker on {device} | "
+        f"Training SpikingConvLIFTracker v3 (beta={args.beta}, hm_w={args.hm_weight}) on {device} | "
         f"Train: {len(train_recs)}, Val: {len(val_recs)}, Test: {len(test_recs)}"
     )
     t_start = time.time()
@@ -137,15 +158,17 @@ def main():
             x, y = augment_pass(x, y)
 
             optimizer.zero_grad()
-            pred, _ = model(x)
-            loss = criterion(pred, y)
+            pred, _, logits = model(x, return_logits=True)
+            c_loss = coord_criterion(pred, y)
+            h_loss = gaussian_heatmap_loss(logits, y, model.grid_x, model.grid_y, sigma_px=args.sigma_px)
+            loss = c_loss + args.hm_weight * h_loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 2.0)
             optimizer.step()
             train_loss += loss.item()
 
         scheduler.step()
-        val_rmse = evaluate_split(model, val_recs, device)
+        val_rmse, val_spread = evaluate_split(model, val_recs, device)
 
         if val_rmse < best_val_rmse:
             best_val_rmse = val_rmse
@@ -154,38 +177,39 @@ def main():
         if epoch % 10 == 0 or epoch == 1:
             print(
                 f"Epoch {epoch:3d}/{args.epochs} | Train Loss: {train_loss / len(train_recs):6.2f} | "
-                f"Val RMSE: {val_rmse:6.2f} px | Best Val: {best_val_rmse:6.2f} px"
+                f"Val RMSE: {val_rmse:6.2f} px | Val Spread: {val_spread:5.1f} px | Best Val: {best_val_rmse:6.2f} px"
             )
 
     print(f"\nTraining finished in {time.time() - t_start:.1f}s | Best Val RMSE: {best_val_rmse:.2f} px")
     model.load_state_dict(torch.load(args.out_ckpt, map_location=device, weights_only=True))
     model.eval()
 
-    # Evaluate unseen test split
     by_regime = {}
     print(f"\n=== Unseen Test Split ({len(test_recs)} passes) ===")
-    print(f"{'Pass ID':<30} | {'Regime':<15} | {'Speed':>7} | {'RMSE (px)':>9} | {'Spike %':>7}")
-    print("-" * 80)
+    print(f"{'Pass ID':<30} | {'Regime':<15} | {'Speed':>7} | {'RMSE (px)':>9} | {'Spread':>7} | {'Spike %':>7}")
+    print("-" * 90)
 
     with torch.no_grad():
         for rec in test_recs:
             x = rec["frames"].unsqueeze(0).to(device)
             y = rec["targets"].unsqueeze(0).to(device)
-            pred, spk_rate = model(x)
+            pred, spk_rate, spread = model(x, return_spread=True)
             err = torch.hypot(pred[..., 0] - y[..., 0], pred[..., 1] - y[..., 1])
             rmse = torch.sqrt((err**2).mean()).item()
+            sp_mean = spread.mean().item()
             spk_pct = 100.0 * spk_rate.item()
-            by_regime.setdefault(rec["regime"], []).append((rmse, spk_pct))
+            by_regime.setdefault(rec["regime"], []).append((rmse, sp_mean, spk_pct))
             print(
                 f"{rec['pass_id']:<30} | {rec['regime']:<15} | {float(rec['speed_px_s']):>7.1f} | "
-                f"{rmse:>9.2f} | {spk_pct:>6.2f}%"
+                f"{rmse:>9.2f} | {sp_mean:>6.1f}px | {spk_pct:>6.2f}%"
             )
 
-    print("\n=== SNN Test Regime Summary ===")
+    print("\n=== SNN v3 Test Regime Summary ===")
     for reg, vals in by_regime.items():
-        rmses = [v[0] for v in vals]
-        spks = [v[1] for v in vals]
-        print(f"{reg:<16} | Mean RMSE: {np.mean(rmses):6.2f} px | Mean Spike Rate: {np.mean(spks):5.2f}%")
+        print(
+            f"{reg:<16} | Mean RMSE: {np.mean([v[0] for v in vals]):6.2f} px | "
+            f"Mean Spread: {np.mean([v[1] for v in vals]):5.1f} px | Mean Spike Rate: {np.mean([v[2] for v in vals]):5.2f}%"
+        )
 
 
 if __name__ == "__main__":

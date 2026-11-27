@@ -46,7 +46,12 @@ class SpikingConvLIFTracker(nn.Module):
         self.register_buffer("grid_x", grid_x.reshape(1, -1))
         self.register_buffer("grid_y", grid_y.reshape(1, -1))
 
-    def forward(self, x_seq: torch.Tensor, return_spread: bool = False):
+    def forward(
+        self,
+        x_seq: torch.Tensor,
+        return_spread: bool = False,
+        return_logits: bool = False,
+    ):
         B, T, _, H, W = x_seq.shape
         device = x_seq.device
 
@@ -56,6 +61,7 @@ class SpikingConvLIFTracker(nn.Module):
 
         coords_list = []
         spread_list = []
+        logits_list = []
         total_spikes = 0.0
         total_neurons = 0
 
@@ -82,11 +88,19 @@ class SpikingConvLIFTracker(nn.Module):
                 spread = torch.sqrt((probs * (dx2 + dy2)).sum(dim=-1) + 1e-6)
                 spread_list.append(spread)
 
+            if return_logits:
+                logits_list.append(logits)
+
             total_spikes = total_spikes + spk1.sum() + spk2.sum() + spk3.sum()
             total_neurons += spk1.numel() + spk2.numel() + spk3.numel()
 
         coords = torch.stack(coords_list, dim=1)
         spike_rate = total_spikes / max(1, total_neurons)
+
+        if return_spread and return_logits:
+            return coords, spike_rate, torch.stack(spread_list, dim=1), torch.stack(logits_list, dim=1)
         if return_spread:
             return coords, spike_rate, torch.stack(spread_list, dim=1)
+        if return_logits:
+            return coords, spike_rate, torch.stack(logits_list, dim=1)
         return coords, spike_rate
