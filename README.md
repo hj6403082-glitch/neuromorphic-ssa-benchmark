@@ -36,24 +36,18 @@ Models trained **exclusively on synthetic data** evaluated zero-shot on real tel
 | **`SL14RB_leap_1933_davis_td`** | 170.36 px *(1.4% upd)* | **106.26 px** *(105.06 med)* | **106.26 px** | 106.78 px |
 
 ### 3. Phase 4: Multi-Object Tracking (`sigmoid` + Focal Loss)
-Replacing the global spatial `softmax` with a per-pixel `sigmoid` heatmap head trained via CenterNet-style Focal Loss (`models/train_snn_mot.py`, same 20,356-parameter backbone, 11.9%–16.1% spike sparsity) resolves single-target blindness on the unseen 6-pass `benchmark_mot` test split (19 total RSOs across 2–4 simultaneous targets + heavy clutter):
+Replacing the global spatial `softmax` with a per-pixel `sigmoid` heatmap head trained via CenterNet-style Focal Loss (`models/train_snn_mot.py`, same 20,356-parameter backbone, 11.9%–16.1% spike sparsity) enables multi-peak detection on the synthetic `benchmark_mot` dataset (2–4 simultaneous RSOs + heavy clutter).
 
-| `prob_thresh` | Matched (`<40 px`) | Recall | Pred Tracks | Mean RMSE |
-| :---: | :---: | :---: | :---: | :---: |
-| **`0.35`** | **18 / 19** | **94.7%** | 124 | **2.28 px** |
-| **`0.50`** | 17 / 19 | 89.5% | 50 | 6.62 px |
-| **`0.60`** | 16 / 19 | 84.2% | **47** | 5.95 px |
-| **`0.70`** | 16 / 19 | 84.2% | 49 | 7.38 px |
+The detection threshold (`prob_thresh = 0.60`) was selected strictly on the 6-pass validation split (maximizing F1@40px) and evaluated once on the held-out 6-pass test split using 1-to-1 Hungarian track matching:
+
+| Split (`prob_thresh=0.60`) | R@5px | R@10px | R@40px | P@40px | F1@40 | FP/pass | IDSW | RMSE@40 |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **Validation** (6 passes) | 89.5% | 94.7% | 94.7% | 42.9% | 0.590 | 4.00 | 24 | 2.27 px |
+| **Test** (6 passes, locked) | 73.7% | 73.7% | 78.9% | 31.9% | 0.455 | 5.33 | 33 | 3.99 px |
 
 **Zero-Shot `ISS_2_td` Boundary (`offset = 92.87s`, `81,755` events, 2 active GT objects: IDs `2` and `10`):**
 * **Single-Target `softmax` (`v2`):** `0/2` matched (`153.71 px` and `175.61 px` on `T01`); pre-softmax logit Z-scores at both targets were negative (`-0.14`, `-0.24`).
-* **Multi-Target `sigmoid` (`snn_mot_best.pt`, `prob_thresh=0.25`):** Broke single-target blindness with `1/2` matched (`Obj 2`: `21.95 px`, `3.8%` overlap; `Obj 10` improved from `175.61 → 64.30 px` across `87.5%` overlap), while `prob_thresh >= 0.35` pruned clutter tracks (`23 → 3 → 0`) alongside low-SNR real targets (`1.45–2.87` local events/bin), isolating the remaining gap as a zero-shot sim-to-real SNR shift.
-
-### Key Takeaways & Ablation (`v2` vs. `v3`)
-* **Zero-Shot Sim-to-Real Win:** On `SL-16RB`, the spread-gated **Hybrid v2** tracker achieves **6.00 px RMSE (4.71 px median)**—beating both the classical Kalman filter (`10.48 px`) and raw SNN (`37.39 px`). On `cosmos_1848`, classical clustering fails to initialize (`1.2%` updates, `216.92 px`), while the SNN tracks zero-shot at `30–35 px`.
-* **Temporal Decay ($\beta$) Tradeoff:** Increasing LIF decay from `0.85` (`v2`) to `0.95` (`v3`) with Gaussian heatmap supervision **halved** synthetic `hard_ebssa` error (`42.22 → 21.32 px`) and improved sparse `cosmos_1848` (`35.20 → 30.22 px`), but introduced membrane lag on fast targets and reduced zero-shot transfer on `SL-16RB`.
-
----
+* **Multi-Target `sigmoid` (`snn_mot_best.pt`, `prob_thresh=0.25`):** `1/2` matched on real ISS data at a lowered threshold (`Obj 2`: `21.95 px`, `3.8%` overlap; `Obj 10`: `64.30 px` across `87.5%` overlap, 23 predicted tracks). Raising the threshold to `>= 0.35` prunes clutter tracks (`23 -> 3 -> 0`) along with both real targets (`1.45–2.87` local events/bin). A working hypothesis is that this drop reflects a zero-shot sim-to-real SNR and clutter-distribution shift rather than an architectural ceiling, which remains to be tested with domain-matched training data.
 
 ## Real-Sky Trajectory Comparison (`SL-16RB`)
 
