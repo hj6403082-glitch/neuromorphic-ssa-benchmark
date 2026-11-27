@@ -117,13 +117,31 @@ neuromorphic-ssa-benchmark/
 ~~~
 
 ## Laser Orbital Debris Removal (LODR) Error Budget
-Using a self-consistent `31.0 µrad/px` (`6.4"/px`) sensor scale, circular LEO zenith rates (`450–1000 km`), and Phipps et al. (2012) laser-coupling physics (`λ = 1.06 µm`, `1 m` aperture + `1"` seeing → `w_θ = 5.02 µrad`, `Φ_opt = 53 kJ/m²`, `C_m = 75 µN·s/J`), `analysis/lodr_error_budget.py` compares uncompensated pointing offsets (latency lower bounds, excluding host I/O):
+**System Role (Coarse Acquisition Only):** At `31.0 µrad/px` (`6.4"/px`), even the spatial RMSE alone (`2.27–3.99 px` = `70–124 µrad`) is an order of magnitude wider than a seeing-limited `1 m` laser beam (`4.21 µrad` 1/e² radius at `1.0"` FWHM seeing). Accordingly, the SNN operates strictly as a **coarse acquisition stage** handing off to a second-stage fine-pointing / adaptive-optics (AO) loop. Panel B of the design curve models that second fine-track loop, not the coarse SNN tracker.
 
-| Regime | Rate (mrad/s) | SNN-val (5.5 ms) | SNN-test (5.5 ms) | 200 fps (5.0 ms) | 60 fps (16.7 ms) | 30 fps (33.3 ms) |
+### 1. Coarse Acquisition Pointing Offset (Measured RMSE + Latency Lower Bound)
+Frame baselines (`baselines/eval_frame_mot.py`) bin the identical `benchmark_mot` test events into `1/30 s`, `1/60 s`, and `1/200 s` frames and run connected-component centroiding + Kalman association (`30 fps`: `5.42 px` RMSE, `17.1%` P; `60 fps`: `0.68 px` RMSE, `31.6%` R; `200 fps`: `5.53 px` RMSE, `8.5%` P, `30.3` FP/pass, `156` IDSW). Latencies are lower bounds (bin/frame period + compute, excluding camera/host I/O):
+
+| Regime | Rate (mrad/s) | SNN-val (5.5 ms) | SNN-test (5.5 ms) | 200 fps (5.0 ms) | 60 fps* (16.7 ms) | 30 fps (33.3 ms) |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **ISS (533 km slant)** | 13.86 | 103.6 µrad | 145.2 µrad | 75.8 µrad | 233.0 µrad | 461.4 µrad |
-| **LEO 450 km** | 16.99 | 117.0 µrad | 155.0 µrad | 90.4 µrad | 285.4 µrad | 566.5 µrad |
-| **LEO 800 km** | 9.32 | 87.1 µrad | 133.9 µrad | 56.0 µrad | 158.7 µrad | 311.9 µrad |
-| **LEO 1000 km** | 7.35 | 81.2 µrad | 130.1 µrad | 48.1 µrad | 126.7 µrad | 246.8 µrad |
+| **ISS (533 km slant)** | 13.86 | 103.6 µrad | 145.2 µrad | 184.8 µrad | 231.9 µrad | 490.1 µrad |
+| **LEO 450 km** | 16.99 | 117.0 µrad | 155.0 µrad | 191.3 µrad | 284.5 µrad | 590.1 µrad |
+| **LEO 800 km** | 9.32 | 87.1 µrad | 133.9 µrad | 177.7 µrad | 157.1 µrad | 352.9 µrad |
+| **LEO 1000 km** | 7.35 | 81.2 µrad | 130.1 µrad | 175.3 µrad | 124.6 µrad | 297.0 µrad |
+
+*\*60 fps achieves only 31.6% recall on the test split (dropping fainter tracks); 200 fps suffers 30.3 FP/pass and 156 IDSW.*
+
+### 2. Unified 1/e² Beam Radius, Pulse Energy & Δv at 800 km LEO
+Using a unified 1/e² Gaussian beam radius (`w_diff = 0.82 λ/D`, `w_see = FWHM / sqrt(2 ln 2)`), `λ = 1.06 µm`, `Φ_opt = 53 kJ/m²` (5 ns Al worst case), `C_m = 75 µN·s/J`, `η_c = 0.30`, `µ = 10 kg/m²`, and `1000` pulses/pass **[Phipps et al., 2012, arXiv:1110.3835]**, alongside `D = 1 m` seeing-limited aperture, `±250 µrad` FSM window, `Φ_0 = 106 kJ/m²` (2× margin), and `Φ_th = 15 kJ/m²` **[Assumed]**:
+
+* **Per-pulse / Per-pass Δv [Phipps 2012]:** `119.2 mm/s/pulse` (`119.2 m/s` per 1000-pulse pass) at `Φ_opt = 53 kJ/m²`; `238.5 mm/s/pulse` (`238.5 m/s/pass`) on-axis at `Φ_0 = 106 kJ/m²`.
+
+| Seeing (FWHM) | w_θ (1/e²) | Spot r @ 800 km | E_p @ 53 kJ/m² | E_p @ 106 kJ/m² |
+| :--- | :---: | :---: | :---: | :---: |
+| **0.5" seeing** | 2.23 µrad | 1.79 m | 0.27 MJ | 0.53 MJ |
+| **1.0" seeing** | 4.21 µrad | 3.37 m | 0.94 MJ | 1.89 MJ |
+| **2.0" seeing** | 8.28 µrad | 6.62 m | 3.65 MJ | 7.31 MJ |
+
+*Reference [Phipps 2012]: A 13 m AO mirror focuses to a 0.155 m spot radius at 1000 km, requiring only `7.3 kJ/pulse`.*
 
 ![LODR Pointing & Coupling Design Curve](results/lodr_design_curve.png)
