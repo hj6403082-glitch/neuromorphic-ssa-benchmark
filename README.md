@@ -35,8 +35,19 @@ Models trained **exclusively on synthetic data** evaluated zero-shot on real tel
 | **`cosmos_1848_davis_td`** | 216.92 px *(1.2% upd)* | 35.20 px *(32.82 med)* | 35.20 px | **30.22 px** |
 | **`SL14RB_leap_1933_davis_td`** | 170.36 px *(1.4% upd)* | **106.26 px** *(105.06 med)* | **106.26 px** | 106.78 px |
 
-### 3. Multi-Object Tracking Boundary Study (`ISS_2_td`)
-Evaluating zero-shot multi-peak extraction + Hungarian/gated Kalman association on the densest 2.0 s window of `ISS_2_td` (`offset = 92.87s`, `304×240`, `81,755` events, 2 active labelled objects: IDs `2` and `10`) yielded `0/2` matches within `40 px` (`153.71 px` and `175.61 px` on `T01`). This highlights a clear architectural boundary: single-target global `softmax` supervision excels on single-RSO tracking and zero-shot single-target transfer, whereas multi-object scenes with heavy background/slew activity require multi-peak/heatmap supervision during training or explicit event clustering/CFAR front-ends.
+### 3. Phase 4: Multi-Object Tracking (`sigmoid` + Focal Loss)
+Replacing the global spatial `softmax` with a per-pixel `sigmoid` heatmap head trained via CenterNet-style Focal Loss (`models/train_snn_mot.py`, same 20,356-parameter backbone, 11.9%–16.1% spike sparsity) resolves single-target blindness on the unseen 6-pass `benchmark_mot` test split (19 total RSOs across 2–4 simultaneous targets + heavy clutter):
+
+| `prob_thresh` | Matched (`<40 px`) | Recall | Pred Tracks | Mean RMSE |
+| :---: | :---: | :---: | :---: | :---: |
+| **`0.35`** | **18 / 19** | **94.7%** | 124 | **2.28 px** |
+| **`0.50`** | 17 / 19 | 89.5% | 50 | 6.62 px |
+| **`0.60`** | 16 / 19 | 84.2% | **47** | 5.95 px |
+| **`0.70`** | 16 / 19 | 84.2% | 49 | 7.38 px |
+
+**Zero-Shot `ISS_2_td` Boundary (`offset = 92.87s`, `81,755` events, 2 active GT objects: IDs `2` and `10`):**
+* **Single-Target `softmax` (`v2`):** `0/2` matched (`153.71 px` and `175.61 px` on `T01`); pre-softmax logit Z-scores at both targets were negative (`-0.14`, `-0.24`).
+* **Multi-Target `sigmoid` (`snn_mot_best.pt`, `prob_thresh=0.25`):** Broke single-target blindness with `1/2` matched (`Obj 2`: `21.95 px`, `3.8%` overlap; `Obj 10` improved from `175.61 → 64.30 px` across `87.5%` overlap), while `prob_thresh >= 0.35` pruned clutter tracks (`23 → 3 → 0`) alongside low-SNR real targets (`1.45–2.87` local events/bin), isolating the remaining gap as a zero-shot sim-to-real SNR shift.
 
 ### Key Takeaways & Ablation (`v2` vs. `v3`)
 * **Zero-Shot Sim-to-Real Win:** On `SL-16RB`, the spread-gated **Hybrid v2** tracker achieves **6.00 px RMSE (4.71 px median)**—beating both the classical Kalman filter (`10.48 px`) and raw SNN (`37.39 px`). On `cosmos_1848`, classical clustering fails to initialize (`1.2%` updates, `216.92 px`), while the SNN tracks zero-shot at `30–35 px`.
@@ -80,7 +91,11 @@ python eval/eval_hybrid_tracker.py
 
 # 4. Profile latency and SynOps, or run the ISS_2_td multi-object evaluation
 python eval/profile_snn.py
-python eval/eval_mot_iss.py --recording ISS_2_td --duration_s 2.0 --start_offset_s 92.87
+# 5. Generate, train, and evaluate the Phase 4 multi-object SNN (sigmoid + Focal Loss)
+python sim/gen_mot_dataset.py
+python models/train_snn_mot.py --epochs 25
+python eval/eval_mot_synth.py
+python eval/eval_mot_iss.py --recording ISS_2_td --duration_s 2.0 --start_offset_s 92.87 --ckpt checkpoints/snn_mot_best.pt --mode sigmoid --prob_thresh 0.25
 ~~~
 
 ---
