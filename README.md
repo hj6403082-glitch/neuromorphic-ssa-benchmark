@@ -37,29 +37,38 @@ Models trained **exclusively on synthetic data** evaluated zero-shot on real tel
 
 ### 3. Phase 4: Multi-Object Tracking (`sigmoid` + Focal Loss)
 
-Evaluated on the low-SNR calibrated `benchmark_mot` split (log-uniform target density `0.75–8.0` events/bin matching the real `ISS_2_td` regime; 6 val / 6 test passes). All frame proxies are validation-tuned on the same `val` split and locked for `test`.
+**Benchmark Versioning:** `benchmark_mot_v1` (archived high-SNR, `3–8` ev/bin) is superseded by **`benchmark_mot_v2`** (low-SNR calibrated, log-uniform `0.75–8.0` ev/bin matching `ISS_2_td`). All trackers are validation-tuned on the 6-pass `v2` `val` split and evaluated locked on **`benchmark_mot_v2_test60`** (60 fresh test passes, `189` targets, 1,000-resample bootstrap 95% CIs; `analysis/eval_v2_bootstrap.py`).
 
-| Tracker (Val-Locked Config) | Val R@40 | Val F1@40 | Test R@40 | Test P@40 | Test F1@40 | Test RMSE@40 |
+| Tracker (Val-Locked Config) | Test R@40 [95% CI] | Test P@40 [95% CI] | Test F1@40 [95% CI] | FP/pass | IDSW | Test RMSE |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **SNN (`0.50`, `mm=20, mh=10`)** | **60.0%** | **68.6** | 55.0% | **52.4%** | **53.7** | 6.55 px |
-| **30 fps proxy (`t=2,c=4,h=6`)** | 40.0% | 34.8 | 40.0% | **38.1%** | **39.0** | **1.04 px** |
-| **60 fps proxy (`t=1,c=6,h=6`)** | 50.0% | 32.3 | **60.0%** | 27.9% | 38.1 | 5.77 px |
-| **200 fps proxy (`t=2,c=2,h=2`)** | 15.0% | 24.0 | 20.0% | 36.4% | 25.8 | 2.80 px |
+| **SNN v2 (`0.50`, `mm=20, mh=10`)** | 52.4% [44.3, 59.3] | **51.0%** [45.9, 56.9] | **51.7** [46.6, 56.5] | 1.58 | 104 | **6.50 px** |
+| **30 fps proxy (`t=2,c=4,h=6`)** | 42.3% [35.3, 49.2] | 36.2% [30.8, 42.1] | 39.0 [33.3, 44.5] | 2.35 | 72 | 6.57 px |
+| **60 fps proxy (`t=1,c=6,h=6`)** | **54.0%** [47.1, 60.6] | 24.8% [21.1, 29.0] | 33.9 [29.5, 38.6] | 5.17 | 165 | 6.68 px |
+| **200 fps proxy (`t=2,c=2,h=2`)** | 20.6% [14.8, 27.4] | 47.0% [38.1, 58.1] | 28.7 [22.0, 34.8] | **0.73** | **43** | 7.12 px |
 
-#### Recall vs. Target Event Density (`val+test`, `N=40` targets, `R@40px`)
+#### Recall vs. Target Event Density (`benchmark_mot_v2_test60`, `N=189` targets, 95% Bootstrap CI)
 
-At matching `5 ms` (`200 fps`) temporal resolution, stateless frame integration collapses in faint-target regimes, whereas the SNN's LIF membrane integration maintains a clear recall advantage inside the `1.5–4.5` events/bin band:
-
-| Target Density (ev / 5 ms bin) | SNN (`0.50`) | 60 fps proxy | 30 fps proxy | 200 fps proxy |
-| :--- | :---: | :---: | :---: | :---: |
-| **`[1.5–3.0]` (`ISS_2_td` band, `n=17`)** | **52.9%** | 35.3% | 5.9% | 5.9% |
-| **`[3.0–4.5]` (`n=5`)** | **60.0%** | 40.0% | 40.0% | 0.0% |
-| **`[4.5–6.0]` (`n=7`)** | **100.0%** | 100.0% | 100.0% | 14.3% |
-| **`[6.0–9.5]` (`n=6`)** | **100.0%** | 100.0% | 100.0% | 83.3% |
+| Density Bin (ev / 5 ms) | `n` | SNN v2 (`0.50`) | 30 fps proxy | 60 fps proxy | 200 fps proxy |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **`[0.75, 1.50)`** | 33 | 12.1% [3.0, 24.2] | 9.1% [0.0, 18.2] | 12.1% [3.0, 24.2] | 9.1% [0.0, 18.2] |
+| **`[1.50, 3.00)` (`ISS_2_td` band)** | 63 | **42.9%** [31.7, 55.6] | 14.3% [6.3, 23.8] | 25.4% [15.9, 36.5] | 7.9% [1.6, 15.9] |
+| **`[3.00, 4.50)`** | 44 | 61.4% [47.7, 75.0] | 45.5% [31.8, 61.4] | **75.0%** [61.4, 86.4] | 6.8% [0.0, 13.6] |
+| **`[4.50, 6.00)`** | 20 | 80.0% [60.0, 95.0] | 95.0% [85.0, 100.0] | **100.0%** [100.0, 100.0] | 20.0% [5.0, 40.0] |
+| **`[6.00, 9.50)`** | 29 | 86.2% [72.4, 96.6] | **100.0%** [100.0, 100.0] | **100.0%** [100.0, 100.0] | 82.8% [65.5, 96.6] |
 
 ![Recall vs. Target Event Density](results/recall_vs_snr.png)
 
-* **Zero-Shot Real-Sky `ISS_2_td` Transfer (`304×240` ATIS):** Combining low-SNR calibration (`0.75–8.0` ev/bin), `100 ms` track persistence (`max_missed=20, min_hits=10`), and a `30 Hz` static hot-pixel filter cuts clutter from `11` to `4` tracks and achieves **`2/2` zero-shot lock** on the `91.50 s` crossing window (`Obj 2`: `4.11 px` RMSE, `14.4%` overlap; `Obj 10`: `12.99 px` RMSE, `3.3%` overlap; mean `8.55 px`). Overlap remains partial and fainter windows (`78.00 s`, `0/2` with `0` FP) still reflect the `304×240` vs. `240×180` sensor domain gap.
+#### Real-Sky ATIS Evaluation (`304×240`, Calibrated vs. Frozen Holdout)
+* **Calibrated on `ISS_2_td` (`91.50 s` crossing, `2.5 s`, `112,945` events):** Because the synthetic low-SNR range (`0.75–8.0` ev/bin) and `30 Hz` hot-pixel filter were chosen while inspecting `ISS_2_td`, this result is reported as **calibrated on `ISS_2_td`** (not zero-shot). Clutter drops from `11` to `4` tracks and both active targets are matched (`2/2`), with **partial temporal coverage**: `Obj 2` (`4.11 px` RMSE, `14.4%` overlap) and `Obj 10` (`12.99 px` RMSE, `3.3%` overlap; mean `8.55 px`).
+* **Fainter `ISS_2_td` window (`78.00 s`, `2.0 s`, `56,190` events):** `0/2` matched (`0` clutter tracks).
+* **Untouched Frozen Holdout (`archenar_leos_1149_atis_td`, `0.00–10.00 s`, `634,178` events):** With all settings frozen, `0/1` matched (`5` tracks; closest `T01` at `44.14 px` RMSE, `2.1%` overlap) under ~6.8× denser ATIS background clutter than `ISS_2_td`.
+
+#### Tuning Provenance Log
+| Parameter / Component | Tuned / Calibrated On | Locked For |
+| :--- | :--- | :--- |
+| Frame proxy `(pix_thr, min_cluster, min_hits)` | `benchmark_mot_v2` `val` (6 passes) | `benchmark_mot_v2_test60` (60 passes) |
+| SNN `prob_thresh=0.50`, `max_missed=20`, `min_hits=10` | `benchmark_mot_v2` `val` (6 passes) | `benchmark_mot_v2_test60` + `archenar_leos_1149_atis_td` |
+| Synthetic density (`0.75–8.0` ev/bin) & `hot_pixel_hz=30.0` | `ISS_2_td` diagnostic inspection | `benchmark_mot_v2_test60` + `archenar_leos_1149_atis_td` |
 
 ## Real-Sky Trajectory Comparison (`SL-16RB`)
 
@@ -129,31 +138,32 @@ neuromorphic-ssa-benchmark/
 ~~~
 
 ## Laser Orbital Debris Removal (LODR) Error Budget
-**System Role (Coarse Acquisition Only):** At `31.0 µrad/px` (`6.4"/px`), even the spatial RMSE alone (`2.27–3.99 px` = `70–124 µrad`) is an order of magnitude wider than a seeing-limited `1 m` laser beam (`4.21 µrad` 1/e² radius at `1.0"` FWHM seeing). Accordingly, the SNN operates strictly as a **coarse acquisition stage** handing off to a second-stage fine-pointing / adaptive-optics (AO) loop. Panel B of the design curve models that second fine-track loop, not the coarse SNN tracker.
+**System Role (Coarse Acquisition → Fine AO Handoff):** At `31.0 µrad/px` (`6.4"/px`), the SNN's spatial RMSE alone (`6.50 px` = `201.5 µrad`) is three orders of magnitude wider than a diffraction-limited adaptive-optics (AO) laser beam (`w_θ = 0.155 µrad`). Accordingly, the SNN operates strictly as a **coarse acquisition stage** whose handoff offset must land inside a **`±250 µrad` fine-steering mirror (FSM) capture window** [Assumed] so a second-stage fine-AO loop can close.
 
-### 1. Coarse Acquisition Pointing Offset (Measured RMSE + Latency Lower Bound)
-Frame baselines (`baselines/eval_frame_mot.py`) bin the identical `benchmark_mot` test events into `1/30 s`, `1/60 s`, and `1/200 s` frames and run connected-component centroiding + Kalman association (`30 fps`: `5.42 px` RMSE, `17.1%` P; `60 fps`: `0.68 px` RMSE, `31.6%` R; `200 fps`: `5.53 px` RMSE, `8.5%` P, `30.3` FP/pass, `156` IDSW). Latencies are lower bounds (bin/frame period + compute, excluding camera/host I/O):
+### 1. Coarse Acquisition & FSM Handoff Offset (`benchmark_mot_v2_test60`, `31.0 µrad/px`)
+All trackers are val-tuned on `benchmark_mot_v2` `val` and locked on `benchmark_mot_v2_test60` (`60` passes, `189` targets). Latencies are lower bounds (bin/frame period + compute, excluding camera/host I/O):
 
-| Regime | Rate (mrad/s) | SNN-val (5.5 ms) | SNN-test (5.5 ms) | 200 fps (5.0 ms) | 60 fps* (16.7 ms) | 30 fps (33.3 ms) |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **ISS (533 km slant)** | 13.86 | 103.6 µrad | 145.2 µrad | 184.8 µrad | 231.9 µrad | 490.1 µrad |
-| **LEO 450 km** | 16.99 | 117.0 µrad | 155.0 µrad | 191.3 µrad | 284.5 µrad | 590.1 µrad |
-| **LEO 800 km** | 9.32 | 87.1 µrad | 133.9 µrad | 177.7 µrad | 157.1 µrad | 352.9 µrad |
-| **LEO 1000 km** | 7.35 | 81.2 µrad | 130.1 µrad | 175.3 µrad | 124.6 µrad | 297.0 µrad |
+| Regime | Rate (mrad/s) | SNN v2 test60 (5.5 ms) | 200 fps test60 (5.0 ms) | 60 fps test60 (16.7 ms) | 30 fps test60 (33.3 ms) |
+| :--- | :---: | :---: | :---: | :---: | :---: |
+| **ISS (533 km slant)** | 13.86 | **215.4 µrad** *(in ±250)* | 231.3 µrad *(20.6% R)* | 310.2 µrad *(miss)* | 503.4 µrad *(miss)* |
+| **LEO 450 km** | 16.99 | **222.1 µrad** *(in ±250)* | 236.5 µrad *(20.6% R)* | 351.2 µrad *(miss)* | 601.2 µrad *(miss)* |
+| **LEO 800 km** | 9.32 | **207.9 µrad** *(in ±250)* | 225.6 µrad *(20.6% R)* | 259.0 µrad *(miss)* | 371.2 µrad *(miss)* |
+| **LEO 1000 km** | 7.35 | **205.5 µrad** *(in ±250)* | 223.8 µrad *(20.6% R)* | 240.8 µrad *(in ±250)* | 318.5 µrad *(miss)* |
 
-*\*60 fps achieves only 31.6% recall on the test split (dropping fainter tracks); 200 fps suffers 30.3 FP/pass and 156 IDSW.*
+*`SNN v2 (test60)` stays inside the `±250 µrad` FSM capture window across all four orbital regimes while maintaining `52.4%` recall and `51.0%` precision (`F1 = 51.7`). `60 fps` and `30 fps` exceed `±250 µrad` at `450–800 km`, while `200 fps` drops to `20.6%` recall.*
 
-### 2. Unified 1/e² Beam Radius, Pulse Energy & Δv at 800 km LEO
-Using a unified 1/e² Gaussian beam radius (`w_diff = 0.82 λ/D`, `w_see = FWHM / sqrt(2 ln 2)`), `λ = 1.06 µm`, `Φ_opt = 53 kJ/m²` (5 ns Al worst case), `C_m = 75 µN·s/J`, `η_c = 0.30`, `µ = 10 kg/m²`, and `1000` pulses/pass **[Phipps et al., 2012, arXiv:1110.3835]**, alongside `D = 1 m` seeing-limited aperture, `±250 µrad` FSM window, `Φ_0 = 106 kJ/m²` (2× margin), and `Φ_th = 15 kJ/m²` **[Assumed]**:
+### 2. Reference AO Fine-Pointing Coupling (`w_θ = 0.155 µrad`, `Φ_0 = 53.0 kJ/m²`)
+Following **Phipps et al. (2012, arXiv:1110.3835)** (`13 m` AO mirror → `0.155 m` 1/e² spot radius at `1000 km`, `w_θ = 0.155 µrad`, `E_p = 7.3 kJ`, `Φ_0 = Φ_opt = 53.0 kJ/m²` for `5 ns` pulse on Al, `C_m = 75 µN·s/J`, `η_c = 0.30`, `µ = 10 kg/m²`, `1000` pulses/pass, `Φ_th = 15.0 kJ/m²` [Assumed]):
 
-* **Per-pulse / Per-pass Δv [Phipps 2012]:** `119.2 mm/s/pulse` (`119.2 m/s` per 1000-pulse pass) at `Φ_opt = 53 kJ/m²`; `238.5 mm/s/pulse` (`238.5 m/s/pass`) on-axis at `Φ_0 = 106 kJ/m²`.
+* **Orbital Δv Sanity Check:** Lowering an `800 km` circular orbit to a `200 km` perigee requires **`164.6 m/s`** (exact Hohmann transfer). On-axis at `Φ_0 = 53.0 kJ/m²`, `1000` pulses deliver **`119.2 m/s` per pass** (~`1.4` passes to deorbit).
+* **Fine-Loop Latency Tolerance:** Holding `0.10 µrad` at `800 km` (`9.32 µrad/ms`) permits only **`~10.7 µs`** of uncompensated latency—requiring orbital-dynamics prediction inside the fine-AO loop.
 
-| Seeing (FWHM) | w_θ (1/e²) | Spot r @ 800 km | E_p @ 53 kJ/m² | E_p @ 106 kJ/m² |
-| :--- | :---: | :---: | :---: | :---: |
-| **0.5" seeing** | 2.23 µrad | 1.79 m | 0.27 MJ | 0.53 MJ |
-| **1.0" seeing** | 4.21 µrad | 3.37 m | 0.94 MJ | 1.89 MJ |
-| **2.0" seeing** | 8.28 µrad | 6.62 m | 3.65 MJ | 7.31 MJ |
-
-*Reference [Phipps 2012]: A 13 m AO mirror focuses to a 0.155 m spot radius at 1000 km, requiring only `7.3 kJ/pulse`.*
+| Fine-AO Pointing Error | Delivered Fluence `Φ` | Expected `Δv` / 1000-Pulse Pass |
+| :---: | :---: | :---: |
+| **`0.00 µrad`** | `53.0 kJ/m²` | **`119.2 m/s`** |
+| **`0.05 µrad`** | `43.0 kJ/m²` | `96.8 m/s` |
+| **`0.09 µrad`** | `27.0 kJ/m²` | `60.8 m/s` |
+| **`0.12 µrad`** | `16.0 kJ/m²` | `36.0 m/s` |
+| **`0.15 µrad`** | `8.1 kJ/m²` *(< Φ_th)* | `0.0 m/s` |
 
 ![LODR Pointing & Coupling Design Curve](results/lodr_design_curve.png)

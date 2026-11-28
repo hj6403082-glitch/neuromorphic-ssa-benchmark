@@ -12,7 +12,7 @@ FSM_WINDOW_URAD = 250.0     # ±250 urad fine-steering capture window [Assumed]
 W_REF_URAD = 0.155          # 1/e^2 beam radius at 1000 km [Phipps 2012, Sec. 4 / Case a]
 PHI_OPT = 53.0              # kJ/m^2 (5 ns pulse on Al, worst case) [Phipps 2012, Eq. 3]
 PHI_TH = 15.0               # kJ/m^2 (plasma ignition cutoff) [Assumed]
-PHI_0 = 106.0               # kJ/m^2 (2x Phi_opt on-axis margin) [Assumed]
+PHI_0 = PHI_OPT             # kJ/m^2 (1x Phi_opt on-axis) [Phipps 2012, Eq. 3]
 CM_UN_S_J = 75.0            # uN*s/J (representative Al coupling) [Phipps 2012 — verify Fig. 3]
 ETA_C = 0.30                # tumbling/shape efficiency [Phipps 2012 — verify Sec. 3]
 AREAL_MASS = 10.0           # kg/m^2 representative debris [Assumed / Phipps 2012 baseline]
@@ -21,11 +21,11 @@ PULSES_PER_PASS = 1000      # pulses/pass (~11.2 Hz over ~90 s) [Assumed / Phipp
 # --- 3. Validation-Tuned, Test-Locked Trackers ---
 # (Label, Test RMSE_px, Latency LB ms, R@40%, P@40%, Color, Marker)
 TRACKERS = [
-    ("SNN (val, 5.5ms LB)",             2.27,  5.5, 94.7, 42.9, "#00d4ff", "o"),
-    ("SNN (test, 5.5ms LB)",            3.99,  5.5, 78.9, 31.9, "#00ff88", "s"),
-    ("200 fps proxy (5.0ms LB)",        1.03,  5.0, 31.6, 12.0, "#f59e0b", "^"),
-    ("60 fps proxy (16.7ms LB)",        4.01, 16.7, 68.4, 26.5, "#fb7185", "D"),
-    ("30 fps proxy (33.3ms LB)",        8.11, 33.3, 63.2, 75.0, "#ef4444", "X"),
+    ("SNN v2 (val, 5.5ms LB)",          7.44,  5.5, 60.0, 80.0, "#00d4ff", "o"),
+    ("SNN v2 (test60, 5.5ms LB)",       6.50,  5.5, 52.4, 51.0, "#00ff88", "s"),
+    ("200 fps v2 (test60, 5.0ms LB)",   7.12,  5.0, 20.6, 47.0, "#f59e0b", "^"),
+    ("60 fps v2 (test60, 16.7ms LB)",   6.68, 16.7, 54.0, 24.8, "#fb7185", "D"),
+    ("30 fps v2 (test60, 33.3ms LB)",   6.57, 33.3, 42.3, 36.2, "#ef4444", "X"),
 ]
 
 
@@ -56,7 +56,13 @@ def print_tables():
     for name, rmse, lat, r40, p40, _, _ in TRACKERS:
         offs = [f"{np.hypot(rmse, px_s * (lat * 1e-3)) * IFOV_URAD:6.1f} u" for _, px_s in regimes]
         print(f"{name:<26} | {r40:4.1f}% | {p40:4.1f}% | {rmse:4.2f}px | " + " | ".join(f"{o:>8}" for o in offs))
-    print("\n=== 2. Reference AO Fine-Pointing Coupling (w_theta = 0.155 urad, 1000 pulses/pass) ===")
+    # Exact Hohmann Delta-v from 800 km circular to 200 km perigee
+    r1, r2 = R_EARTH + 800e3, R_EARTH + 200e3
+    v_circ = np.sqrt(MU_EARTH / r1)
+    v_trans = np.sqrt(MU_EARTH * (2.0 / r1 - 2.0 / (r1 + r2)))
+    dv_deorbit = v_circ - v_trans
+    print(f"\n=== 2. Reference AO Fine-Pointing Coupling (w_theta = 0.155 urad, Phi_0 = {PHI_0:.1f} kJ/m^2, 1000 pulses/pass) ===")
+    print(f"Sanity check: Hohmann Delta-v (800 km -> 200 km perigee) = {dv_deorbit:.1f} m/s | FSM capture window = +/-{FSM_WINDOW_URAD:.0f} urad")
     print(f"Uncompensated latency tolerance for 0.10 urad @ 800 km (9.32 urad/ms): ~10.7 us (requires orbit prediction).")
     for err in (0.0, 0.05, 0.09, 0.12, 0.15, 0.20):
         phi = float(delivered_fluence(err))
