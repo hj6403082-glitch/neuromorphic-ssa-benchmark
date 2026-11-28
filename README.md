@@ -36,18 +36,30 @@ Models trained **exclusively on synthetic data** evaluated zero-shot on real tel
 | **`SL14RB_leap_1933_davis_td`** | 170.36 px *(1.4% upd)* | **106.26 px** *(105.06 med)* | **106.26 px** | 106.78 px |
 
 ### 3. Phase 4: Multi-Object Tracking (`sigmoid` + Focal Loss)
-Replacing the global spatial `softmax` with a per-pixel `sigmoid` heatmap head trained via CenterNet-style Focal Loss (`models/train_snn_mot.py`, same 20,356-parameter backbone, 11.9%–16.1% spike sparsity) enables multi-peak detection on the synthetic `benchmark_mot` dataset (2–4 simultaneous RSOs + heavy clutter).
 
-The detection threshold (`prob_thresh = 0.60`) was selected strictly on the 6-pass validation split (maximizing F1@40px) and evaluated once on the held-out 6-pass test split using 1-to-1 Hungarian track matching:
+Evaluated on the low-SNR calibrated `benchmark_mot` split (log-uniform target density `0.75–8.0` events/bin matching the real `ISS_2_td` regime; 6 val / 6 test passes). All frame proxies are validation-tuned on the same `val` split and locked for `test`.
 
-| Split (`prob_thresh=0.60`) | R@5px | R@10px | R@40px | P@40px | F1@40 | FP/pass | IDSW | RMSE@40 |
-| :--- | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **Validation** (6 passes) | 89.5% | 94.7% | 94.7% | 42.9% | 0.590 | 4.00 | 24 | 2.27 px |
-| **Test** (6 passes, locked) | 73.7% | 73.7% | 78.9% | 31.9% | 0.455 | 5.33 | 33 | 3.99 px |
+| Tracker (Val-Locked Config) | Val R@40 | Val F1@40 | Test R@40 | Test P@40 | Test F1@40 | Test RMSE@40 |
+| :--- | :---: | :---: | :---: | :---: | :---: | :---: |
+| **SNN (`0.50`, `5.5 ms`)** | **70.0%** | **51.9** | 55.0% | 25.6% | 34.9 | 4.89 px |
+| **30 fps proxy (`t=2,c=4,h=6`)** | 40.0% | 34.8 | 40.0% | **38.1%** | **39.0** | **1.04 px** |
+| **60 fps proxy (`t=1,c=6,h=6`)** | 50.0% | 32.3 | **60.0%** | 27.9% | 38.1 | 5.77 px |
+| **200 fps proxy (`t=2,c=2,h=2`)** | 15.0% | 24.0 | 20.0% | 36.4% | 25.8 | 2.80 px |
 
-**Zero-Shot `ISS_2_td` Boundary (`offset = 92.87s`, `81,755` events, 2 active GT objects: IDs `2` and `10`):**
-* **Single-Target `softmax` (`v2`):** `0/2` matched (`153.71 px` and `175.61 px` on `T01`); pre-softmax logit Z-scores at both targets were negative (`-0.14`, `-0.24`).
-* **Multi-Target `sigmoid` (`snn_mot_best.pt`, `prob_thresh=0.25`):** `1/2` matched on real ISS data at a lowered threshold (`Obj 2`: `21.95 px`, `3.8%` overlap; `Obj 10`: `64.30 px` across `87.5%` overlap, 23 predicted tracks). Raising the threshold to `>= 0.35` prunes clutter tracks (`23 -> 3 -> 0`) along with both real targets (`1.45–2.87` local events/bin). A working hypothesis is that this drop reflects a zero-shot sim-to-real SNR and clutter-distribution shift rather than an architectural ceiling, which remains to be tested with domain-matched training data.
+#### Recall vs. Target Event Density (`val+test`, `N=40` targets, `R@40px`)
+
+At matching `5 ms` (`200 fps`) temporal resolution, stateless frame integration collapses in faint-target regimes, whereas the SNN's LIF membrane integration maintains a clear recall advantage inside the `1.5–4.5` events/bin band:
+
+| Target Density (ev / 5 ms bin) | SNN (`0.50`) | 60 fps proxy | 30 fps proxy | 200 fps proxy |
+| :--- | :---: | :---: | :---: | :---: |
+| **`[1.5–3.0]` (`ISS_2_td` band, `n=17`)** | **52.9%** | 35.3% | 5.9% | 5.9% |
+| **`[3.0–4.5]` (`n=5`)** | **60.0%** | 40.0% | 40.0% | 0.0% |
+| **`[4.5–6.0]` (`n=7`)** | **100.0%** | 100.0% | 100.0% | 14.3% |
+| **`[6.0–9.5]` (`n=6`)** | **100.0%** | 100.0% | 100.0% | 83.3% |
+
+![Recall vs. Target Event Density](results/recall_vs_snr.png)
+
+* **Zero-Shot Real-Sky `ISS_2_td` Transfer (`304×240` ATIS):** Calibrating synthetic target rates down to `0.75–8.0` ev/bin unlocks partial zero-shot lock on `Obj 2` (`3.90 px` RMSE, `9.2%` overlap, `1/2` active targets in the `91.50 s` crossing window). Full real-sky robustness remains bounded by `10–13` clutter tracks/window (ATIS hot pixels and `304×240` vs. `240×180` domain shift) and `30 ms` track-persistence fragmentation during sparse-event gaps.
 
 ## Real-Sky Trajectory Comparison (`SL-16RB`)
 
