@@ -83,10 +83,10 @@ def main():
 
     # Val-tuned locked configs
     trackers = {
-        "SNN (0.60, 5.5ms)":       lambda d: run_mot_snn_kf(model, d, dev, gate_px=35.0, mode="sigmoid", prob_thresh=0.60),
-        "30 fps proxy (t=2,c=6,h=4)":  lambda d: run_frame_proxy(d, fps=30,  pix_thr=2, min_cluster=6, min_hits=4),
-        "60 fps proxy (t=2,c=2,h=6)":  lambda d: run_frame_proxy(d, fps=60,  pix_thr=2, min_cluster=2, min_hits=6),
-        "200 fps proxy (t=1,c=4,h=4)": lambda d: run_frame_proxy(d, fps=200, pix_thr=1, min_cluster=4, min_hits=4),
+        "SNN (0.50, 5.5ms)":       lambda d: run_mot_snn_kf(model, d, dev, gate_px=35.0, mode="sigmoid", prob_thresh=0.50),
+        "30 fps proxy (t=2,c=4,h=6)":  lambda d: run_frame_proxy(d, fps=30,  pix_thr=2, min_cluster=4, min_hits=6),
+        "60 fps proxy (t=1,c=6,h=6)":  lambda d: run_frame_proxy(d, fps=60,  pix_thr=1, min_cluster=6, min_hits=6),
+        "200 fps proxy (t=2,c=2,h=2)": lambda d: run_frame_proxy(d, fps=200, pix_thr=2, min_cluster=2, min_hits=2),
     }
 
     records = {k: [] for k in trackers}
@@ -105,7 +105,7 @@ def main():
     colors = ["#00d4ff", "#ef4444", "#fb7185", "#f59e0b"]
     markers = ["o", "X", "D", "^"]
 
-    print(f"=== Recall@40px vs. Target Density (val+test, N={len(records['SNN (0.60, 5.5ms)'])} targets) ===")
+    print(f"=== Recall@40px vs. Target Density (val+test, N={len(records['SNN (0.50, 5.5ms)'])} targets) ===")
     fig, ax = plt.subplots(figsize=(8.2, 4.8), dpi=200)
     ax.axvspan(1.45, 2.87, color="#a855f7", alpha=0.14, label="Real EBSSA ISS_2_td band (1.45–2.87 ev/bin)")
 

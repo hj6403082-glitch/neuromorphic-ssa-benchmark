@@ -54,7 +54,7 @@ def generate_mot_pass(
             vx = 25.0 if vx >= 0 else -25.0
 
         # Target event rate: 300 - 1600 ev/s (1.5 - 8.0 ev per 5ms bin)
-        ev_rate = rng.uniform(300.0, 1600.0)
+        ev_rate = float(np.exp(rng.uniform(np.log(150.0), np.log(1600.0))))
         n_ev = rng.poisson(ev_rate * duration_s)
         ts = rng.uniform(0.0, duration_s, size=n_ev)
         tx = x0 + vx * ts + rng.normal(0.0, 1.5, size=n_ev)
