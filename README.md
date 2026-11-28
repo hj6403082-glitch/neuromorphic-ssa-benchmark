@@ -41,7 +41,7 @@ Evaluated on the low-SNR calibrated `benchmark_mot` split (log-uniform target de
 
 | Tracker (Val-Locked Config) | Val R@40 | Val F1@40 | Test R@40 | Test P@40 | Test F1@40 | Test RMSE@40 |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
-| **SNN (`0.50`, `5.5 ms`)** | **70.0%** | **51.9** | 55.0% | 25.6% | 34.9 | 4.89 px |
+| **SNN (`0.50`, `mm=20, mh=10`)** | **60.0%** | **68.6** | 55.0% | **52.4%** | **53.7** | 6.55 px |
 | **30 fps proxy (`t=2,c=4,h=6`)** | 40.0% | 34.8 | 40.0% | **38.1%** | **39.0** | **1.04 px** |
 | **60 fps proxy (`t=1,c=6,h=6`)** | 50.0% | 32.3 | **60.0%** | 27.9% | 38.1 | 5.77 px |
 | **200 fps proxy (`t=2,c=2,h=2`)** | 15.0% | 24.0 | 20.0% | 36.4% | 25.8 | 2.80 px |
@@ -59,7 +59,7 @@ At matching `5 ms` (`200 fps`) temporal resolution, stateless frame integration 
 
 ![Recall vs. Target Event Density](results/recall_vs_snr.png)
 
-* **Zero-Shot Real-Sky `ISS_2_td` Transfer (`304×240` ATIS):** Calibrating synthetic target rates down to `0.75–8.0` ev/bin unlocks partial zero-shot lock on `Obj 2` (`3.90 px` RMSE, `9.2%` overlap, `1/2` active targets in the `91.50 s` crossing window). Full real-sky robustness remains bounded by `10–13` clutter tracks/window (ATIS hot pixels and `304×240` vs. `240×180` domain shift) and `30 ms` track-persistence fragmentation during sparse-event gaps.
+* **Zero-Shot Real-Sky `ISS_2_td` Transfer (`304×240` ATIS):** Combining low-SNR calibration (`0.75–8.0` ev/bin), `100 ms` track persistence (`max_missed=20, min_hits=10`), and a `30 Hz` static hot-pixel filter cuts clutter from `11` to `4` tracks and achieves **`2/2` zero-shot lock** on the `91.50 s` crossing window (`Obj 2`: `4.11 px` RMSE, `14.4%` overlap; `Obj 10`: `12.99 px` RMSE, `3.3%` overlap; mean `8.55 px`). Overlap remains partial and fainter windows (`78.00 s`, `0/2` with `0` FP) still reflect the `304×240` vs. `240×180` sensor domain gap.
 
 ## Real-Sky Trajectory Comparison (`SL-16RB`)
 

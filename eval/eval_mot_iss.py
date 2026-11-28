@@ -162,16 +162,24 @@ def run_mot_snn_kf(
     data: dict,
     device: torch.device,
     gate_px: float = 35.0,
-    max_missed: int = 6,
-    min_hits_to_report: int = 5,
+    max_missed: int = 20,
+    min_hits_to_report: int = 10,
     mode: str = "softmax",
     prob_thresh: float = 0.25,
+    hot_pixel_hz: float = 0.0,
 ):
     n_bins = int(round(data["duration_s"] / DT_STEP))
     frames = np.zeros((n_bins, 2, GRID_H, GRID_W), dtype=np.float32)
 
     b_idx = np.floor(data["t_ev"] / DT_STEP).astype(np.int64)
     valid = (b_idx >= 0) & (b_idx < n_bins)
+    if hot_pixel_hz > 0.0 and data["duration_s"] > 0.0:
+        xi = np.clip(np.round(data["x_ev"]).astype(np.int64), 0, int(data["x_max"]) - 1)
+        yi = np.clip(np.round(data["y_ev"]).astype(np.int64), 0, int(data["y_max"]) - 1)
+        flat = yi * int(data["x_max"]) + xi
+        counts = np.bincount(flat[valid], minlength=int(data["x_max"]) * int(data["y_max"]))
+        hot = counts > (hot_pixel_hz * data["duration_s"])
+        valid = valid & (~hot[flat])
     gx = np.clip((data["x_ev"][valid] * (GRID_W / data["x_max"])).astype(np.int64), 0, GRID_W - 1)
     gy = np.clip((data["y_ev"][valid] * (GRID_H / data["y_max"])).astype(np.int64), 0, GRID_H - 1)
     np.add.at(frames, (b_idx[valid], data["p_ev"][valid], gy, gx), 1.0)
@@ -327,6 +335,9 @@ def main():
     parser.add_argument("--gate_px", type=float, default=35.0)
     parser.add_argument("--mode", choices=["softmax", "sigmoid"], default="softmax")
     parser.add_argument("--prob_thresh", type=float, default=0.25)
+    parser.add_argument("--max_missed", type=int, default=20)
+    parser.add_argument("--min_hits", type=int, default=10)
+    parser.add_argument("--hot_pixel_hz", type=float, default=0.0)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -345,7 +356,7 @@ def main():
     data = load_iss_multi_object(
         args.h5, args.recording, duration_s=args.duration_s, start_offset_s=args.start_offset_s
     )
-    pred_tracks = run_mot_snn_kf(model, data, device, gate_px=args.gate_px, mode=args.mode, prob_thresh=args.prob_thresh)
+    pred_tracks = run_mot_snn_kf(model, data, device, gate_px=args.gate_px, max_missed=args.max_missed, min_hits_to_report=args.min_hits, mode=args.mode, prob_thresh=args.prob_thresh, hot_pixel_hz=args.hot_pixel_hz)
     per_obj, summary = evaluate_against_gt(pred_tracks, data["gt_tracks"])
 
     print(
